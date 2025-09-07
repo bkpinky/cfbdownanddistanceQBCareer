@@ -1,0 +1,55 @@
+##search a QB and get a table for average completion yds on down and distance
+library(gt)
+library(cfbfastR)
+library(dplyr)
+
+##search for QB | need their athlete_id 
+QBsearch <- cfbd_play_stats_player(athlete_id=4695400)
+Qbsearchclean <- QBsearch %>%
+  drop_na(completion_yds)
+Qbsearchclean
+
+QBdnd <- Qbsearchclean %>%
+  mutate(distance_group = case_when(
+    distance >= 1 & distance <= 5 ~ "1-5",
+    distance >= 6 & distance <= 10 ~ "6-10"
+  )) %>%
+  filter(!is.na(distance_group)) %>%  # Remove any distances outside 1-10
+  group_by(down, distance_group) %>%
+  summarise(median_completion_yds = median(completion_yds, na.rm = TRUE),
+            .groups = 'drop')
+rostersinyear <- cfbd_team_roster(2025)
+
+Qbsearchclean <- Qbsearchclean %>%
+  left_join(rostersinyear %>% select(athlete_id, headshot_url), 
+            by = c("completion_player_id" = "athlete_id")) %>%
+  rename(QBheadshot = headshot_url)
+#grab the QB's team logo
+QBlogo <- Qbsearchclean %>%
+  left_join(team_info %>% select(school, logo),
+            by = c("team" = "school"))
+logourl <- QBlogo$logo[480]
+headshoturl <- Qbsearchclean$QBheadshot[1]
+#print(QBdnd)
+#plot QB Down and Distance
+QBdnd_gt <- QBdnd %>%
+  select(down, distance_group, median_completion_yds)
+saveqbplt <- QBdnd_gt %>%
+  gt() %>%
+  gtExtras::gt_theme_538() %>%
+  cols_align(align = "center") %>%  
+  cols_label(down = "Down",
+             distance_group = "Distance",
+             median_completion_yds = "Median Completion Yds") %>%
+  tab_source_note("Data:cfbfastr") %>%
+  tab_options(table.background.color = "beige")%>%
+  tab_header(
+    title = html(paste0('<div style="display: flex; justify-content: space-between; align-items: center;">
+                         <span>Down and Distance</span>
+                         <div>
+                          <img src="', logourl, '" style="height: 50px;">
+                          <img src="', headshoturl,'" style="height:50px;">
+                        </div>'))
+  )
+
+gtsave(saveqbplt,"qbdnd.png")
